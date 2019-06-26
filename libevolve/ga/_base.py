@@ -1,161 +1,267 @@
 # -*- coding: utf-8 -*-
+# -----------------------------------------------------------------------------------------
+# author     = "Sameh K. Mohamed"
+# copyright  = "Copyright 2019, The Project"
+# credits    = ["Sameh K. Mohamed"]
+# license    = "MIT"
+# version    = "0.0.0"
+# maintainer = "Sameh K. Mohamed"
+# email      = "sameh.kamaleldin@gmail.com"
+# status     = "Development"
+# -----------------------------------------------------------------------------------------
+# Created by sameh at 2019-06-16
+# -----------------------------------------------------------------------------------------
 
-from abc import abstractmethod
-from random import Random
-from .util import GeneticHistory, normalise
-from ..common import *
+from collections.abc import Iterable
+import random
+import numpy as np
+from deap import base, algorithms, creator, tools
+
+
+
+# def mutate(individual, indpb, myself):
+#     for i in range(len(individual)):
+#         if random.random() < indpb:
+#             individual[i] = myself.parameters[i].get_rand_value()
+#     return individual,
+
 
 
 class GeneticAlgorithm:
     """ A class for a generic genetic algorithm
     """
-    def __init__(self,
-                 population_size=50,
-                 nb_generations=20,
-                 mutation_size=1,
-                 mutation_probability=0.3,
-                 crossover_probability=0.5,
-                 selection_size=20,
-                 seed=1234,
-                 verbose=0):
+    def __init__(self, parameters, fitness_function, objective_weights):
         """ Initialise a new instance of the `GeneticAlgorithm` class
 
         Parameters
         ----------
-        population_size : int
-            the population size
-        nb_generations : int
-            the number of generations
-        mutation_size : int
-            the number of genes to be mutated
-        mutation_probability : float
-            the probability of mutation for the chosen genes
-        crossover_probability : float
-            probability of crossover
-        selection_size : int
-            the size of natural selection group
-        seed : int
-            random seed
-        verbose : int
-            verbosity level
-
-        Examples
-        ----------
-        >>> from libevolve.ga import GeneticAlgorithm
-        >>> ga = GeneticAlgorithm(population_size=10, nb_generations=15, mutation_size=1, mutation_probability=0.9)
-        """
-
-        self.population_size = population_size
-        self.nb_generations = nb_generations
-        self.mutation_size = mutation_size
-        self.mutation_probability = mutation_probability
-        self.crossover_probability = crossover_probability
-
-        self.verbose = verbose
-        self.seed = seed
-        self.rs = Random(seed)
-        self.parameters = None
-        self.fitness_function = None
-        self.objective_weights = None
-        self.history = GeneticHistory()
-
-    @abstractmethod
-    def _crossover(self, parent1, parent2):
-        """ Crossover between two parents individuals
-
-        Parameters
-        ----------
-        parent1 : Individual
-            first parent individual
-        parent2 : Individual
-            second parent individual
-
-        Returns
-        -------
-        Individual
-            first child individual
-        Individual
-            second child individual
-        """
-        pass
-
-    @abstractmethod
-    def natural_selection(self, population, fitness_scores, *args, **kwargs):
-        """ Perform genetic natural selection
-
-        population : list
-            list of individuals
-        fitness_fitness_scores : list
-            list of fitness scores lists
-        args : list
-            other un named arguments
-        kwargs : dict
-            other named arguments
-
-        Returns
-        -------
-        list
-            list of chosen individuals
-        """
-        pass
-
-    def evolve(self, parameters, fitness_function, objective_weights, *args, **kwargs):
-        """ Perform evolution on the specified parameters and objective function
-
-        parameters : list
+        parameters : Iterable
             the set of evolutionary learning parameters
         fitness_function : function
             the fitness function. Expects named parameters that are equal or subset of the input parameters with the
             same names as specified in the input parameters. Must return an iterable.
-        objective_weights : list
+        objective_weights : Iterable
             the assigned weights to the fitness function output objective values. Positive values denote maximisation
             objective while negative values represent minimisation objective of the corresponding objective output.
-        args : list
-            other un named arguments
-        kwargs : dict
-            other named arguments
+        """
+        self.parameters = parameters
+        self.fitness_function = fitness_function
+        self.objective_weights = objective_weights
+        # self.crossover= None
+        # self.selection= None
+        self.toolbox = None
+        self.population = None
+        self.stats = None
+
+
+
+    def __eval_fun(self, individual):
+        """ Customize the fitness function to be compatible for DEAP
+
+        Parameters
+        ----------
+        individual : Iterable
+            an individual in the population
+
+        """
+
+        return self.fitness_function(individual),
+
+
+    def __mutate(self, individual, indpb):
+        """ General Mutation for any Type of gene
+
+        Parameters
+        ----------
+        individual : Iterable
+            an individual in the population
+
+        indpb : float between 0 and 1
+            probabilty of mutation
 
         Returns
         -------
-        list
-            set of best parameter values
-        list
-            set of fitness function scores for the best parameters
-        GeneticHistory
-            history of the genetic evolution
+        Iterable
+            The mutant Individual (Chromosome)
 
-        Examples
-        ----------
-        >>> from libevolve.ga import GeneticAlgorithm
-        >>> from libevolve.common import *
-        >>> ga = GeneticAlgorithm(population_size=10, nb_generations=15, mutation_size=1, mutation_probability=0.9)
-        >>> best_solution, best_score, history = ga.evolve()
         """
-        best_solution, best_score = None, 0.0
 
-        nb_params = len(parameters)
-        nb_objectives = len(objective_weights)
-        param_names = [p.name for p in parameters]
-        population = []
+        for i in range(len(individual)):
+            if random.random() < indpb:
+                individual[i] = self.parameters[i].get_rand_value()
 
-        # generate initial population
-        for _ in range(self.population_size):
-            ind = Individual(parameters, seed=self.rs.randint(0, 9999999999))
-            population.append(ind)
+        return individual,
 
-        current_generation = population
-        current_generation_fitness = [[] for _ in range(nb_objectives)]
 
-        for generation_idx in range(self.nb_generations):
-            for ind in current_generation:
-                ind_fitness = fitness_function(**ind.key_params)
-                for idx, fitness_value in enumerate(ind_fitness):
-                    current_generation_fitness[idx].append(fitness_value)
 
-                # selection
+    def __intialize_toolbox(self, cxtype, mutprob, seltype, sel_attr_dict):
+        """ Initialize The Toolbox for the GA
 
-                # crossover
+        Parameters
+        ----------
+        cxtype : Function
+            function of Crossover in DEAP or Custom function (Compatible with DEAP)
 
-                # mutations
+        mutprob : float between 0 and 1
+            probabilty of mutation
 
-        return best_solution, best_score, self.history
+        seltype : Function
+            function of Selection in DEAP or Custom function (Compatible with DEAP)
+
+        sel_attr_dict : Dictionary
+            dictionary of parameters for the selection function
+
+
+        Returns
+        -------
+        ToolBox
+            for testing
+
+        """
+
+        creator.create("FitnessMax", base.Fitness, weights=self.objective_weights)
+        creator.create("Individual", list, fitness=creator.FitnessMax)
+        toolbox = base.Toolbox()
+
+        #Register Parameters to the GA
+        for x in self.parameters:
+            toolbox.register(x.name,x.get_rand_value)
+
+        toolbox.register("individual", tools.initCycle, creator.Individual
+                         ,[toolbox.__getattribute__(x.name) for x in self.parameters],n=1)
+
+        toolbox.register("population", tools.initRepeat, list, toolbox.individual)
+        toolbox.register("evaluate", self.__eval_fun)
+
+
+        # Register the Cross-Over Function
+        toolbox.register("mate", cxtype)
+
+        # Register the mutation Function
+        toolbox.register("mutate", self.__mutate, indpb=mutprob)
+
+        # Register the Selection Function
+        toolbox.register("select", seltype, **sel_attr_dict)
+
+        self.toolbox=toolbox
+        return toolbox
+
+
+    def __intialize_stats(self):
+        """
+            Just initialize Stats for the GA
+
+        Returns
+        ----------
+            stats
+        """
+
+        stats = tools.Statistics(lambda ind: ind.fitness.values)
+        stats.register("avg", np.mean)
+        stats.register("max", np.max)
+
+        self.stats=stats
+        return stats
+
+    def __gen_population(self, n):
+        """ initialize Population
+
+        Parameters
+        ----------
+        n : integer Number
+            Size of Population
+
+        """
+
+        self.population = self.toolbox.population(n=n)
+
+    def intialize(self, cxtype_fun=tools.cxOnePoint, mutprob= 0.5, seltype_fun= tools.selTournament, sel_attr_dict = {'tournsize': 3} , n_pop=10):
+        """ Initialize toolbox , stats and population for the GA
+
+        Parameters
+        ----------
+        cxtype : Function
+            function of Crossover in DEAP or Custom function (Compatible with DEAP)
+
+        mutprob : float between 0 and 1
+            probabilty of mutation
+
+        seltype : Function
+            function of Selection in DEAP or Custom function (Compatible with DEAP)
+
+        sel_attr_dict : Dictionary
+            dictionary of parameters for the selection function
+
+        n_pop : integer Number
+            Size of population
+
+
+
+        """
+        self.__intialize_toolbox(cxtype = cxtype_fun, mutprob = mutprob, seltype = seltype_fun, sel_attr_dict = sel_attr_dict)
+        self.__intialize_stats()
+        self.__gen_population(n=n_pop)
+
+
+    def evolve(self, probab_crossing=0.5, probab_mutating = 0.2, num_generations = 10):
+        """ Generate the GA and return the result
+
+        Parameters
+        ----------
+
+        probab_crossing : float between 0 and 1
+            probabilty of mutation
+
+        probab_crossing : float between 0 and 1
+            probabilty of mutation
+
+        num_generations : integer Number
+            number of Generations
+
+        Return: Iterable
+            first : Best Individual
+            second : Best Value
+
+        """
+
+        population, log = algorithms.eaSimple(self.population, self.toolbox, cxpb=probab_crossing, stats=self.stats
+                                              , mutpb=probab_mutating, ngen=num_generations)
+        best_ind = tools.selBest(population, 1)[0]
+        best_value=best_ind.fitness.values
+
+        return best_ind,best_value
+
+
+class Classic_GA(GeneticAlgorithm):
+
+    def __init__(self,parameters, fitness_function, objective_weights):
+        super().__init__(parameters, fitness_function, objective_weights)
+
+    def result(self):
+
+        super().intialize()
+        return super().evolve(probab_crossing=0.5,probab_mutating=0.2,num_generations=10)
+
+
+
+class Tour_cxTwo_GA(GeneticAlgorithm):
+    def __init__(self, parameters, fitness_function, objective_weights):
+        super().__init__(parameters, fitness_function, objective_weights)
+
+    def result(self):
+
+        super().intialize(cxtype_fun=tools.cxTwoPoint, mutprob= 0.5, seltype_fun= tools.selTournament,sel_attr_dict={"toursize": 3})
+        return super().evolve(probab_crossing = 0.5,probab_mutating = 0.2,num_generations = 20)
+
+
+
+
+
+
+
+
+
+
+
+
+

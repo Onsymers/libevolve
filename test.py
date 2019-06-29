@@ -40,8 +40,9 @@ params = [v1,v2,v3]
 # GA.intialize()
 # ind,value = GA.evolve(num_generations= 100)
 
-c_GA = Classic_GA(params, eval_func, (1.0,))
-ind, value = c_GA.result()
+c_GA = Tour_cxTwo_GA()
+value, ind, hist = c_GA.evolve(parameters=params,
+                         fitness_function=eval_func, objective_weights=(1,))
 
 
 
